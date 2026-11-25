@@ -9,7 +9,7 @@
     "g1.ai.ultra.1month_eft.acq": "g1.ai.ultra.3months_ip_90p.acq"
   };
   var SCAN_KEY = "g1.sku.scan.v81";
-  var TOKEN_RE = /(g1\.[A-Za-z0-9._-]{2,120})/g;
+  var TOKEN_RE = /(g1(?:\.|%2E|\u005cu002e)[A-Za-z0-9._%-]{2,120})/gi;
 
   var url = (typeof $request === "object" && $request && $request.url) || "";
   if (!/^https:\/\/one\.google\.com\//.test(url)) { $done({}); return; }
