@@ -8,10 +8,10 @@
   var isReq = !(typeof $response === "object" && $response);
 
   // ---- respond to report page ----
-  if (isReq && url.indexOf("g1-sku-report") !== -1) {
+ if (url.indexOf("g1-sku-report") !== -1) {
     var d = "{}";
     try { d = $persistentStore.read(LOG_KEY) || "{}"; } catch (e) {}
-    $done({ response: { status: 200, headers: { "Content-Type": "application/json" }, body: d } });
+    $done({ body: d });
     return;
   }
 
