@@ -8,6 +8,11 @@
   if (!/^https:\/\/one\.google\.com\//.test(url)) { $done({}); return; }
   var isReq = !(typeof $response === "object" && $response);
   var body = isReq ? $request.body : $response.body;
+  var ct = "";
+  try {
+  ct = (($response || {}).headers && ($response.headers["Content-Type"] || $response.headers["content-type"])) || "";
+    } catch (e) {}
+  if (!isReq && !/json|html|javascript|text/i.test(ct)) { $done({}); return; }
   if (typeof body !== "string" || !body) { $done({}); return;
 
   }
