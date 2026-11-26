@@ -331,9 +331,10 @@ function createG1MappingConfig(store) {
   var RECENT_LIMIT = 10;
   var MAX_EVENT_COUNT = 9007199254740991;
   // Only used when the primary target is absent from this response and the fallback is present.
+ // Only used when the primary target is absent from this response and the fallback is present.
   var FALLBACKS = {
     "g1.20tb.1month_ip_100p.acq": "g1.20tb.3months_ip_75p.acq",
-    "g1.ai.ultra.1month_19usd.acq": "g1.ai.ultra.3months_ip_75p.acq"
+    "g1.ai.ultra.6months_19usd.acq": "g1.ai.ultra.6months_ip_75p.acq"
   };
   var url = typeof $request === "object" && $request ? $request.url : "";
 
