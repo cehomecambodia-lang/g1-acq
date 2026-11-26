@@ -2,17 +2,19 @@
 "use strict";
 
 (function () {
-  var VERSION = "g1-acq-v7.5";
+  var VERSION = "g1-acq-v7.12.3-6meft";
   var SOURCE_PREFIX = "g1.ios.2tb.";
   // User-selected 12-month offer ID from the screenshot; store metadata is still unverified.
   var TARGET = "g1.2tb.ai.12months_ip_90p";   // leave 2TB as-is (its 12-mo deal is fine)
+  // 20TB: 1-month free trial. 30TB: 6-month effective-price offer.
   var SKU_MAP = {
     "g1.ios.20tb.m.v2": "g1.20tb.1month_eft.acq",
-    "g1.ios.30tb.ai.pro.m": "g1.ai.ultra.1month_eft.acq"
+    "g1.ios.30tb.ai.pro.m": "g1.ai.ultra.6months_eft.acq"
   };
+  // Same term where possible: a term change at confirm time reads as a failure.
   var FALLBACK = {
     "g1.20tb.1month_eft.acq": "g1.20tb.3months_ip_90p.acq",
-    "g1.ai.ultra.1month_eft.acq": "g1.ai.ultra.3months_ip_90p.acq"
+    "g1.ai.ultra.6months_eft.acq": "g1.ai.ultra.6months_ip_75p.acq"
   };
   var TEST_KEY = "g1.pro.annual.test.v1";
   var SCAN_KEY = "g1.sku.scan.v1";
@@ -42,6 +44,7 @@
   var mappings = Object.create(null);
   var hits = 0;
   var annualHits = 0;
+  var fallbackHits = 0;
   var out = body;
 
   if (typeof body === "string") {
@@ -62,11 +65,16 @@
           if (observed.indexOf(to) === -1 && FALLBACK[to] && observed.indexOf(FALLBACK[to]) !== -1) {
             to = FALLBACK[to];
             fallback = true;
+            fallbackHits += 1;
           }
         } else {
           return match;
         }
         if (!mappings[id]) mappings[id] = { id: id, to: to, count: 0, fallback: fallback };
+        if (fallback) {
+          mappings[id].fallback = true;
+          mappings[id].to = to;
+        }
         mappings[id].count += 1;
         hits += 1;
         if (isAnnual) annualHits += 1;
@@ -86,6 +94,7 @@
     target: TARGET,
     targetOrigin: "user-specified",
     hitCount: hits,
+    fallbackHitCount: fallbackHits,
     // Legacy field name: counts 2TB/Pro rewrites, not the billing interval.
     annualHitCount: annualHits,
     matchedFrom: sources,
@@ -103,10 +112,11 @@
     console.log("[g1-acq] local record unavailable");
   }
 
-  console.log("[g1-acq] " + VERSION + " hits=" + hits + " annualHits=" + annualHits);
+  console.log("[g1-acq] " + VERSION + " hits=" + hits + " annualHits=" + annualHits +
+    " fallbackHits=" + fallbackHits);
   sources.forEach(function (source) {
     console.log("[g1-acq] " + source.id + " -> " + source.to + " x" + source.count +
-      (source.fallback ? " fallback=75p" : ""));
+      (source.fallback ? " fallback" : ""));
   });
   $done(hits ? { body: out } : {});
 
