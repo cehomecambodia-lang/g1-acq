@@ -2,11 +2,12 @@
 "use strict";
 
 (function () {
-  var VERSION = "g1-acq-v7.12.3-6meft";
+  var VERSION = "g1-acq-v7.12.4-dbg";
   var SOURCE_PREFIX = "g1.ios.2tb.";
+  var DEBUG = true;
   // User-selected 12-month offer ID from the screenshot; store metadata is still unverified.
   var TARGET = "g1.2tb.ai.12months_ip_90p";   // leave 2TB as-is (its 12-mo deal is fine)
-  // 20TB: 1-month free trial. 30TB: 6-month effective-price offer.
+  // 20TB: 1-month free trial. 30TB: 6-month free trial.
   var SKU_MAP = {
     "g1.ios.20tb.m.v2": "g1.20tb.1month_ip_100p.acq",
     "g1.ios.30tb.ai.pro.m": "g1.ai.ultra.6months_ip_100p.acq"
@@ -39,6 +40,14 @@
     $done({});
     return;
   }
+  if (DEBUG) {
+    var ctype = "";
+    try {
+      ctype = ($response.headers && ($response.headers["Content-Type"] || $response.headers["content-type"])) || "";
+    } catch (error) {}
+    console.log("[g1-dbg] " + url.slice(0, 90) + " ct=" + ctype +
+      " len=" + (typeof body === "string" ? body.length : -1));
+  }
 
   var mappings = Object.create(null);
   var hits = 0;
@@ -53,7 +62,7 @@
     // Match complete tokens before selecting 2TB or the two existing source IDs.
     out = body.replace(
       /(^|[^A-Za-z0-9._@%-])(g1\.[A-Za-z0-9._-]+)(?=$|[^A-Za-z0-9._-])/g,
-      function (match, before, id) {
+      function (match, before, id, offset, full) {
         var isAnnual = id.indexOf(SOURCE_PREFIX) === 0 && id.length > SOURCE_PREFIX.length;
         var to;
         var fallback = false;
@@ -68,6 +77,10 @@
           }
         } else {
           return match;
+        }
+        if (DEBUG) {
+          console.log("[g1-dbg] " + id + " -> " + to + " @" + offset + " …" +
+            full.slice(Math.max(0, offset - 120), offset + 160).replace(/\s+/g, " ") + "…");
         }
         if (!mappings[id]) mappings[id] = { id: id, to: to, count: 0, fallback: fallback };
         if (fallback) {
