@@ -323,13 +323,18 @@ function createG1MappingConfig(store) {
 // END GENERATED MAPPING CONFIG
 
 (function () {
-  var VERSION = "g1-acq-v7.12-trial19";
+  var VERSION = "g1-acq-v7.12.1-trial19fb";
   var SOURCE_PREFIX = "g1.ios.2tb.";
   var TEST_KEY = "g1.pro.annual.test.v1";
   var SCAN_KEY = "g1.sku.scan.v1";
   var SCAN_LIMIT = 300;
   var RECENT_LIMIT = 10;
   var MAX_EVENT_COUNT = 9007199254740991;
+  // Only used when the primary target is absent from this response and the fallback is present.
+  var FALLBACKS = {
+    "g1.20tb.1month_ip_100p.acq": "g1.20tb.3months_ip_75p.acq",
+    "g1.ai.ultra.1month_19usd.acq": "g1.ai.ultra.3months_ip_75p.acq"
+  };
   var url = typeof $request === "object" && $request ? $request.url : "";
 
   if (typeof url !== "string" || !/^https:\/\/one\.google\.com\//.test(url) ||
@@ -360,21 +365,37 @@ function createG1MappingConfig(store) {
   var mappings = Object.create(null);
   var hits = 0;
   var annualHits = 0;
+  var fallbackHits = 0;
   var out = body;
+  var probe = "";
 
   if (typeof body === "string" && !configError) {
+    // Decoded copy: escaped dots would otherwise hide both the primary and the fallback target.
+    probe = body.replace(/\\u002e|\\x2e|&#0*46;|&#x2e;|&period;/gi, ".");
     // Resolve complete tokens once; replacement targets are never matched again.
     out = body.replace(
       /(^|[^A-Za-z0-9._@%-])((?:g1\.|com\.google\.(?:one|gemini)\.)[A-Za-z0-9._-]+)(?=$|[^A-Za-z0-9._-])/g,
       function (match, before, id) {
         var rule = mappingEngine.resolve(id, mappingConfig);
         if (!rule) return match;
+        var target = rule.to;
+        var usedFallback = false;
+        var alternative = FALLBACKS[target];
+        if (alternative && probe.indexOf(target) === -1 && probe.indexOf(alternative) !== -1) {
+          target = alternative;
+          usedFallback = true;
+          fallbackHits += 1;
+        }
         var isAnnual = id.indexOf(SOURCE_PREFIX) === 0 && id.length > SOURCE_PREFIX.length;
-        if (!mappings[id]) mappings[id] = { id: id, to: rule.to, count: 0, fallback: false };
+        if (!mappings[id]) mappings[id] = { id: id, to: target, count: 0, fallback: false };
+        if (usedFallback) {
+          mappings[id].fallback = true;
+          mappings[id].to = target;
+        }
         mappings[id].count += 1;
         hits += 1;
         if (isAnnual) annualHits += 1;
-        return before + rule.to;
+        return before + target;
       }
     );
   }
@@ -394,6 +415,7 @@ function createG1MappingConfig(store) {
     target: mappingConfig.target,
     targetOrigin: mappingConfig.targetOrigin,
     hitCount: hits,
+    fallbackHitCount: fallbackHits,
     // Legacy field name: counts 2TB/Pro rewrites, not the billing interval.
     annualHitCount: annualHits,
     matchedFrom: sources,
@@ -411,9 +433,11 @@ function createG1MappingConfig(store) {
     console.log("[g1-acq] local record unavailable");
   }
 
-  console.log("[g1-acq] " + VERSION + " hits=" + hits + " annualHits=" + annualHits + " mode=" + MODE);
+  console.log("[g1-acq] " + VERSION + " hits=" + hits + " annualHits=" + annualHits +
+    " fallbackHits=" + fallbackHits + " mode=" + MODE);
   sources.forEach(function (source) {
-    console.log("[g1-acq] " + source.id + " -> " + source.to + " x" + source.count);
+    console.log("[g1-acq] " + source.id + " -> " + source.to + " x" + source.count +
+      (source.fallback ? " fallback=75p" : ""));
   });
   $done(hits ? { body: out } : {});
 
