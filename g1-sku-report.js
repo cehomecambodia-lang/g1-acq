@@ -1,14 +1,345 @@
 /* Local-only report served by a Shadowrocket http-request script. */
 "use strict";
 
+// BEGIN GENERATED MAPPING CONFIG
+/* Shared local mapping configuration for the runtime and report controller. */
+function createG1MappingConfig(store) {
+  "use strict";
+
+  var KEY = "g1.sku.mappings.v1";
+  var LIMIT = 30;
+  var DEFAULT_REVISION = "defaults-trial19-v1";
+  var SOURCE_PREFIX = "g1.ios.2tb.";
+  // 20TB: 1 month, 100% off (free trial). 30TB: 1 month at 19 USD.
+  var TARGET_20TB_TRIAL = "g1.20tb.1month_ip_100p.acq";
+  var TARGET_30TB_19USD = "g1.ai.ultra.1month_19usd.acq";
+  var READ_ERROR = "本地映射存储暂未就绪，本次保持响应原样。";
+  var CONFIG_ERROR = "映射配置格式异常，当前暂停改写；请恢复默认后重新编辑。";
+  var WRITE_ERROR = "保存结果未通过回读核对，请刷新页面查看当前配置。";
+  var REVISION_ERROR = "配置已变化，本次未保存；页面已载入最新规则，请重新编辑。";
+  var RULE_FIELDS = ["id", "match", "from", "to", "enabled"];
+  var RECORD_FIELDS = ["schemaVersion", "revision", "updatedAt", "customized", "rules"];
+
+  function defaults() {
+    return [
+      { id: "default-2tb", match: "prefix", from: SOURCE_PREFIX, to: "g1.2tb.ai.12months_ip_90p", enabled: true },
+      { id: "default-20tb", match: "exact", from: "g1.ios.20tb.m.v2", to: TARGET_20TB_TRIAL, enabled: true },
+      { id: "default-30tb", match: "exact", from: "g1.ios.30tb.ai.pro.m", to: TARGET_30TB_19USD, enabled: true }
+    ];
+  }
+
+  function presets() {
+    return [
+      {
+        id: "20tb-1month-trial",
+        title: "20TB · 1 个月免费试用",
+        description: "20TB 切到 1 个月 100% 减免目标（免费试用）；试用期结束后按 App Store 面板续费。",
+        rules: [
+          { match: "exact", from: "g1.ios.20tb.m.v2", to: TARGET_20TB_TRIAL, enabled: true }
+        ]
+      },
+      {
+        id: "30tb-19usd",
+        title: "30TB · 19 美元/月",
+        description: "30TB 切到 1 个月 19 美元目标；实际币种与金额以 App Store 购买面板为准。",
+        rules: [
+          { match: "exact", from: "g1.ios.30tb.ai.pro.m", to: TARGET_30TB_19USD, enabled: true }
+        ]
+      },
+      {
+        id: "pro-1yuan",
+        title: "1 元开 Pro（前三月约 1 元/月）",
+        description: "实测成功：改写后收银台前三月约 1 元/月，入口选 Ultra 5x，实际到手 Pro。周期与金额按 App Store 面板核对。",
+        rules: [
+          { match: "exact", from: "g1.ios.20tb.m.v2", to: "com.google.gemini.2tb.ai.m.3month_ip_99p", enabled: true }
+        ]
+      },
+      {
+        id: "tr-ultra-30tb",
+        title: "土区 30TB · 2949.99 里拉记录",
+        description: "旧 iOS 30TB 编号；公开记录曾调起 2949.99 里拉报价，实际金额与周期查看 App Store。",
+        rules: [
+          { match: "exact", from: "g1.ios.30tb.ai.pro.m", to: "g1.ios.30tb.m", enabled: true }
+        ]
+      },
+      {
+        id: "ultra-75p",
+        title: "Ultra 20TB / 30TB · 三个月 75p",
+        description: "20TB 与 30TB 一起切换到现有 75p 目标；75p 表示减免 75%，实付 25%。",
+        rules: [
+          { match: "exact", from: "g1.ios.20tb.m.v2", to: "g1.20tb.3months_ip_75p.acq", enabled: true },
+          { match: "exact", from: "g1.ios.30tb.ai.pro.m", to: "g1.ai.ultra.3months_ip_75p.acq", enabled: true }
+        ]
+      },
+      {
+        id: "pro-12months-90p",
+        title: "2TB / Pro · 12个月 90p",
+        description: "使用现有 2TB 前缀和 12个月优惠目标；商品周期按 App Store 购买面板显示。",
+        rules: [
+          { match: "prefix", from: SOURCE_PREFIX, to: "g1.2tb.ai.12months_ip_90p", enabled: true }
+        ]
+      }
+    ];
+  }
+
+  function validSku(value) {
+    return typeof value === "string" &&
+      /^(?:g1\.|com\.google\.(?:one|gemini)\.)[A-Za-z0-9._-]{0,159}[A-Za-z0-9_-]$(?![\s\S])/.test(value);
+  }
+
+  function validPrefix(value) {
+    return typeof value === "string" &&
+      /^(?:g1\.|com\.google\.(?:one|gemini)\.)[A-Za-z0-9._-]{1,159}\.$(?![\s\S])/.test(value);
+  }
+
+  function hasFields(value, fields, allowExtra) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    return (allowExtra || Object.keys(value).length === fields.length) && fields.every(function (field) {
+      return Object.prototype.hasOwnProperty.call(value, field);
+    });
+  }
+
+  function invalidRules(error) {
+    return { ok: false, rules: [], error: error };
+  }
+
+  function validateRules(value) {
+    if (!Array.isArray(value) || value.length > LIMIT) {
+      return invalidRules("映射需要规则列表，最多保存 30 条。");
+    }
+    var rules = [];
+    var ids = Object.create(null);
+    var sources = Object.create(null);
+    for (var index = 0; index < value.length; index += 1) {
+      var rule = value[index];
+      if (!hasFields(rule, RULE_FIELDS) || typeof rule.id !== "string" ||
+          !/^[a-z][a-z0-9-]{0,39}$(?![\s\S])/.test(rule.id) ||
+          (rule.match !== "exact" && rule.match !== "prefix") ||
+          !(rule.match === "exact" ? validSku(rule.from) : validPrefix(rule.from)) ||
+          !validSku(rule.to) || typeof rule.enabled !== "boolean") {
+        return invalidRules("请填写完整 SKU；前缀需以点结尾，目标需为 g1.、com.google.one. 或 com.google.gemini. 编号。");
+      }
+      if (rule.from === rule.to) return invalidRules("原始 SKU 与目标 SKU 相同，请填写不同的目标。");
+      if (ids[rule.id]) return invalidRules("规则标识重复，请刷新管理页后重试。");
+      var source = rule.match + ":" + rule.from;
+      if (sources[source]) return invalidRules("相同匹配方式的原始 SKU 已存在，请编辑已有规则。");
+      ids[rule.id] = true;
+      sources[source] = true;
+      rules.push({ id: rule.id, match: rule.match, from: rule.from, to: rule.to, enabled: rule.enabled });
+    }
+    return { ok: true, rules: rules, error: "" };
+  }
+
+  function randomHex(length) {
+    var value = "";
+    for (var index = 0; index < length; index += 1) value += Math.floor(Math.random() * 16).toString(16);
+    return value;
+  }
+
+  function newId() {
+    return "rule-" + randomHex(16);
+  }
+
+  function configState(status, revision, updatedAt, customized, rules, error) {
+    var target = "";
+    rules.some(function (rule) {
+      if (rule.enabled && rule.match === "prefix" && rule.from === SOURCE_PREFIX) {
+        target = rule.to;
+        return true;
+      }
+      return false;
+    });
+    return {
+      status: status,
+      revision: revision,
+      updatedAt: updatedAt,
+      mode: status === "default" ? "trial19usd" : status === "custom" ? "custom" : "",
+      customized: customized,
+      rules: rules,
+      target: target,
+      targetOrigin: target ? customized ? "user-configured" : "user-specified" : "",
+      error: error
+    };
+  }
+
+  function failedState(status) {
+    return configState(status, status, "", false, [], status === "invalid" ? CONFIG_ERROR : READ_ERROR);
+  }
+
+  function validTime(value) {
+    return typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$(?![\s\S])/.test(value) &&
+      isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
+  }
+
+  function read() {
+    var raw;
+    try {
+      if (!store || typeof store.read !== "function") return failedState("unavailable");
+      raw = store.read(KEY);
+    } catch (error) {
+      return failedState("unavailable");
+    }
+    if (raw === null || typeof raw === "undefined" || raw === "") {
+      return configState("default", DEFAULT_REVISION, "", false, defaults(), "");
+    }
+    try {
+      if (typeof raw !== "string") return failedState("invalid");
+      var saved = JSON.parse(raw);
+      if (!hasFields(saved, RECORD_FIELDS, true) || saved.schemaVersion !== 1 ||
+          typeof saved.revision !== "string" || !/^[a-f0-9]{48}$(?![\s\S])/.test(saved.revision) ||
+          !validTime(saved.updatedAt) || typeof saved.customized !== "boolean") {
+        return failedState("invalid");
+      }
+      var checked = validateRules(saved.rules);
+      if (!checked.ok || (!saved.customized && checked.rules.length !== 0)) return failedState("invalid");
+      return configState(saved.customized ? "custom" : "default", saved.revision, saved.updatedAt,
+        saved.customized, saved.customized ? checked.rules : defaults(), "");
+    } catch (error) {
+      return failedState("invalid");
+    }
+  }
+
+  function saveResult(status, error, config) {
+    return { ok: status === 200, status: status, error: error, config: config };
+  }
+
+  function save(expectedRevision, rules, restore) {
+    var current = read();
+    if (current.status === "unavailable") return saveResult(503, READ_ERROR, current);
+    if (typeof expectedRevision !== "string" || expectedRevision !== current.revision) {
+      return saveResult(409, REVISION_ERROR, current);
+    }
+    if (current.status === "invalid" && restore !== true) return saveResult(400, CONFIG_ERROR, current);
+    var checked = restore === true ? { ok: true, rules: [] } : validateRules(rules);
+    if (!checked.ok) return saveResult(400, checked.error, current);
+    try {
+      if (!store || typeof store.write !== "function") return saveResult(503, WRITE_ERROR, current);
+    } catch (error) {
+      return saveResult(503, WRITE_ERROR, current);
+    }
+
+    var revision = randomHex(48);
+    // Keep the change identifier fresh even if the random source repeats a value.
+    if (revision === current.revision) {
+      revision = revision.slice(0, 47) + ((parseInt(revision.charAt(47), 16) + 1) % 16).toString(16);
+    }
+    var saved = {
+      schemaVersion: 1,
+      revision: revision,
+      updatedAt: new Date().toISOString(),
+      customized: restore !== true,
+      rules: checked.rules
+    };
+    var written = false;
+    try {
+      written = store.write(JSON.stringify(saved), KEY);
+    } catch (error) {
+      written = false;
+    }
+    var verified = read();
+    var expectedRules = saved.customized ? saved.rules : defaults();
+    if (!written || verified.status !== (saved.customized ? "custom" : "default") ||
+        verified.revision !== saved.revision || verified.updatedAt !== saved.updatedAt ||
+        verified.customized !== saved.customized || JSON.stringify(verified.rules) !== JSON.stringify(expectedRules)) {
+      return saveResult(503, WRITE_ERROR, verified);
+    }
+    return saveResult(200, "", verified);
+  }
+
+  function applyPreset(expectedRevision, presetId) {
+    var current = read();
+    if (current.status === "unavailable") return saveResult(503, READ_ERROR, current);
+    if (typeof expectedRevision !== "string" || expectedRevision !== current.revision) {
+      return saveResult(409, REVISION_ERROR, current);
+    }
+    if (current.status === "invalid") return saveResult(400, CONFIG_ERROR, current);
+
+    var selected = null;
+    presets().some(function (preset) {
+      if (preset.id !== presetId) return false;
+      selected = preset;
+      return true;
+    });
+    if (!selected) return saveResult(400, "映射模板不存在，请刷新管理页后重试。", current);
+
+    var rules = current.rules.slice();
+    var ids = Object.create(null);
+    var positions = Object.create(null);
+    rules.forEach(function (rule, index) {
+      ids[rule.id] = true;
+      positions[rule.match + ":" + rule.from] = index;
+    });
+    selected.rules.forEach(function (rule) {
+      var source = rule.match + ":" + rule.from;
+      var position = positions[source];
+      var id;
+      if (typeof position === "number") {
+        id = rules[position].id;
+      } else {
+        var base = newId();
+        id = base;
+        // There are at most rules.length occupied candidates, even if randomness repeats.
+        for (var suffix = 1; suffix <= rules.length && ids[id]; suffix += 1) id = base + "-" + suffix;
+        ids[id] = true;
+        position = rules.length;
+        positions[source] = position;
+      }
+      rules[position] = { id: id, match: rule.match, from: rule.from, to: rule.to, enabled: true };
+    });
+
+    var checked = validateRules(rules);
+    if (!checked.ok) return saveResult(400, checked.error, current);
+    return save(expectedRevision, checked.rules, false);
+  }
+
+  function resolve(id, state) {
+    if (!validSku(id) || !state || (state.status !== "default" && state.status !== "custom") ||
+        !Array.isArray(state.rules)) return null;
+    var selected = null;
+    for (var index = 0; index < state.rules.length; index += 1) {
+      var rule = state.rules[index];
+      if (!rule.enabled) continue;
+      if (rule.match === "exact" && rule.from === id) return rule;
+      if (rule.match === "prefix" && id.length > rule.from.length && id.indexOf(rule.from) === 0 &&
+          (!selected || rule.from.length > selected.from.length)) selected = rule;
+    }
+    return selected;
+  }
+
+  return {
+    key: KEY,
+    limit: LIMIT,
+    defaults: defaults,
+    presets: presets,
+    validSku: validSku,
+    validateRules: validateRules,
+    newId: newId,
+    read: read,
+    save: save,
+    applyPreset: applyPreset,
+    resolve: resolve
+  };
+}
+// END GENERATED MAPPING CONFIG
+
 (function () {
   var ROOT = "https://one.google.com/g1-sku-report";
-  var VERSION = "v7.5.0";
-  var COLLECTOR_VERSION = "g1-acq-v7.5";
-  var CONFIGURED_TARGET = "g1.2tb.ai.12months_ip_90p";
-  var LEGACY_TARGET = "g1.2tb.ai.annual";
+  var VERSION = "v7.12";
+  var COLLECTOR_VERSION = "g1-acq-v7.12.1-trial19fb";
   var SCAN_KEY = "g1.sku.scan.v1";
   var TEST_KEY = "g1.pro.annual.test.v1";
+  var EXTRA_ROWS = 3;
+  var MODE_LABELS = {
+    "trial19usd": "默认档：20TB 免费试用 1 个月 / 30TB 19 美元每月",
+    "custom": "自定义映射",
+    "": "未启用"
+  };
+  var CONFIG_STATUS = {
+    "default": "使用默认映射",
+    "custom": "使用自定义映射",
+    "invalid": "配置格式异常，改写已暂停",
+    "unavailable": "本地存储不可用，改写已暂停"
+  };
   var url = typeof $request === "object" && $request ? $request.url : "";
   if (typeof url !== "string" || !/^https:\/\/one\.google\.com\/g1-sku-report\/?(?:\?|$)/.test(url)) {
     $done({});
@@ -16,16 +347,76 @@
   }
 
   var storageAvailable = typeof $persistentStore !== "undefined" &&
-    typeof $persistentStore.read === "function";
-  var clearMessage = "";
-  if (/(?:\?|&)clear=1(?:&|$)/.test(url)) {
+    typeof $persistentStore.read === "function" && typeof $persistentStore.write === "function";
+  var engine = createG1MappingConfig(storageAvailable ? $persistentStore : null);
+  var params = parseQuery(url);
+  var config = engine.read();
+  var message = "";
+  var messageTone = "";
+
+  if (params.clear === "1") {
     try {
       var scanCleared = $persistentStore.write("{}", SCAN_KEY);
       var testCleared = $persistentStore.write("{}", TEST_KEY);
-      clearMessage = scanCleared && testCleared ? "本工具的两份本地记录已清空。" : "本地记录清空未完成。";
+      message = scanCleared && testCleared ? "本工具的两份本地记录已清空。" : "本地记录清空未完成。";
+      messageTone = scanCleared && testCleared ? "ok" : "bad";
     } catch (error) {
-      clearMessage = "本地存储接口暂未就绪。";
+      message = "本地存储接口暂未就绪。";
+      messageTone = "bad";
     }
+  }
+
+  function applyResult(result, okText) {
+    message = result.ok ? okText : result.error;
+    messageTone = result.ok ? "ok" : "bad";
+    if (result.config) config = result.config;
+  }
+
+  if (params.restore === "1") {
+    applyResult(engine.save(params.rev || "", [], true), "已恢复默认映射。");
+  } else if (params.preset) {
+    applyResult(engine.applyPreset(params.rev || "", params.preset), "已套用模板。");
+  } else if (params.save === "1") {
+    applyResult(engine.save(params.rev || "", rulesFromParams(params), false), "映射已保存。");
+  }
+
+  function parseQuery(raw) {
+    var out = {};
+    var query = raw.split("?")[1] || "";
+    query = query.split("#")[0];
+    if (!query) return out;
+    query.split("&").forEach(function (pair) {
+      if (!pair) return;
+      var cut = pair.indexOf("=");
+      var key = cut === -1 ? pair : pair.slice(0, cut);
+      var value = cut === -1 ? "" : pair.slice(cut + 1);
+      try {
+        key = decodeURIComponent(key.replace(/\+/g, " "));
+        value = decodeURIComponent(value.replace(/\+/g, " "));
+      } catch (error) {
+        // Keep the raw pair when decoding fails.
+      }
+      out[key] = value;
+    });
+    return out;
+  }
+
+  function rulesFromParams(source) {
+    var rules = [];
+    for (var index = 0; index <= engine.limit + EXTRA_ROWS; index += 1) {
+      if (!Object.prototype.hasOwnProperty.call(source, "r" + index + "_from")) continue;
+      var from = (source["r" + index + "_from"] || "").trim();
+      var to = (source["r" + index + "_to"] || "").trim();
+      if (!from && !to) continue;
+      rules.push({
+        id: (source["r" + index + "_id"] || "").trim() || engine.newId(),
+        match: source["r" + index + "_match"] === "prefix" ? "prefix" : "exact",
+        from: from,
+        to: to,
+        enabled: source["r" + index + "_enabled"] === "1"
+      });
+    }
+    return rules;
   }
 
   function load(key) {
@@ -45,13 +436,14 @@
     return isFinite(number) && number > 0 ? Math.floor(number) : 0;
   }
   function sku(value) {
-    return typeof value === "string" && /^g1\.[A-Za-z0-9._-]{1,160}$/.test(value) ? value : "";
+    return typeof value === "string" &&
+      /^(?:g1\.|com\.google\.(?:one|gemini)\.)[A-Za-z0-9._-]{1,160}$/.test(value) ? value : "";
   }
   function rows(value, withTime, defaultTarget) {
     if (!Array.isArray(value)) return [];
     return value.slice(0, 300).filter(function (row) {
       return row && typeof row.id === "string" &&
-        /^(?:g1\.|com\.google\.one\.)[A-Za-z0-9._-]{1,160}$/.test(row.id);
+        /^(?:g1\.|com\.google\.(?:one|gemini)\.)[A-Za-z0-9._-]{1,160}$/.test(row.id);
     }).map(function (row) {
       var out = { id: row.id, count: count(row.count) };
       if (withTime) {
@@ -95,9 +487,6 @@
   var scanRaw = load(SCAN_KEY);
   var testRaw = load(TEST_KEY);
   var recordedTarget = sku(testRaw.target);
-  if (!recordedTarget && /^(?:pro-annual-test-v[12]|g1-acq-v7(?:\.0|\.1)?)$/.test(testRaw.version || "")) {
-    recordedTarget = LEGACY_TARGET;
-  }
   var matchedFrom = rows(testRaw.matchedFrom, false, recordedTarget);
   if (!recordedTarget) {
     matchedFrom.some(function (row) {
@@ -113,14 +502,27 @@
       return total + (row.id.indexOf("g1.ios.2tb.") === 0 ? row.count : 0);
     }, 0);
   var storedOrigin = text(testRaw.targetOrigin, 32);
-  var targetOrigin = recordedTarget && /^(?:user-specified|pattern-derived|legacy)$/.test(storedOrigin) ?
-    storedOrigin : recordedTarget === CONFIGURED_TARGET ? "user-specified" :
-      recordedTarget === LEGACY_TARGET ? "legacy" : "";
+  var targetOrigin = recordedTarget && /^(?:user-specified|user-configured|pattern-derived|legacy)$/.test(storedOrigin) ?
+    storedOrigin : "";
   var report = {
     schemaVersion: 1,
     reportVersion: VERSION,
-    configuredTarget: CONFIGURED_TARGET,
     storageAvailable: storageAvailable,
+    mapping: {
+      status: config.status,
+      revision: config.revision,
+      updatedAt: config.updatedAt,
+      mode: config.mode,
+      customized: config.customized,
+      target: config.target,
+      targetOrigin: config.targetOrigin,
+      error: config.error,
+      limit: engine.limit,
+      rules: config.rules
+    },
+    presets: engine.presets().map(function (preset) {
+      return { id: preset.id, title: preset.title };
+    }),
     scan: {
       version: text(scanRaw.version, 32),
       updatedAt: text(scanRaw.updatedAt, 32),
@@ -140,6 +542,7 @@
       targetOrigin: targetOrigin,
       status: text(testRaw.status, 32),
       hitCount: count(testRaw.hitCount),
+      fallbackHitCount: count(testRaw.fallbackHitCount),
       annualHitCount: annualHitCount,
       matchedFrom: matchedFrom
     }
@@ -149,12 +552,14 @@
     "Content-Type": "text/html; charset=utf-8",
     "Cache-Control": "no-store",
     "X-G1-Report-Version": VERSION,
+    "X-G1-Mapping-Revision": config.revision,
     "X-Content-Type-Options": "nosniff",
     "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
   };
-  var exportJSON = /(?:\?|&)format=json(?:&|$)/.test(url);
+  var exportJSON = params.format === "json";
   console.log("[g1-sku-report] " + VERSION + " " + (exportJSON ? "json" : "html") +
-    " storage=" + (storageAvailable ? "ready" : "unavailable") + " candidates=" + report.scan.skus.length);
+    " storage=" + (storageAvailable ? "ready" : "unavailable") +
+    " mapping=" + config.status + " rules=" + config.rules.length);
   if (exportJSON) {
     headers["Content-Type"] = "application/json; charset=utf-8";
     headers["Content-Disposition"] = 'attachment; filename="g1-sku-report.json"';
@@ -186,6 +591,28 @@
           "</td><td>" + event.addedCount + "</td><td>" + event.omittedCount + "</td></tr>";
       }).join("") + "</tbody></table></div>";
   }
+  function ruleRows() {
+    var list = config.rules.slice();
+    var extra = Math.min(EXTRA_ROWS, Math.max(0, engine.limit - list.length));
+    for (var blank = 0; blank < extra; blank += 1) {
+      list.push({ id: "", match: "exact", from: "", to: "", enabled: true });
+    }
+    return list.map(function (rule, index) {
+      var name = "r" + index;
+      return "<tr><td><input type=hidden name=" + name + "_id value=\"" + escape(rule.id) + "\">" +
+        "<select name=" + name + "_match>" +
+        "<option value=exact" + (rule.match === "exact" ? " selected" : "") + ">exact</option>" +
+        "<option value=prefix" + (rule.match === "prefix" ? " selected" : "") + ">prefix</option>" +
+        "</select></td>" +
+        "<td><input name=" + name + "_from class=mono value=\"" + escape(rule.from) +
+        "\" placeholder=g1.ios.20tb.m.v2 spellcheck=false autocapitalize=off></td>" +
+        "<td><input name=" + name + "_to class=mono value=\"" + escape(rule.to) +
+        "\" placeholder=g1.20tb.1month_ip_100p.acq spellcheck=false autocapitalize=off></td>" +
+        "<td class=center><input type=checkbox name=" + name + "_enabled value=1" +
+        (rule.enabled ? " checked" : "") + "></td></tr>";
+    }).join("");
+  }
+
   var latestScan = report.scan.recentResponses.length ?
     report.scan.recentResponses[report.scan.recentResponses.length - 1] : null;
   var scanVersionStatus = report.scan.version === COLLECTOR_VERSION ?
@@ -193,25 +620,50 @@
     report.scan.version ? "旧采集记录；尚未保存本版采集响应记录。" : "尚未保存本版采集响应记录。";
   var statuses = {
     "rewritten": "已执行字符串替换",
-    "no-match": "本次响应未命中三档映射中的源商品",
-    "non-text": "本次响应没有可处理的文本正文"
+    "no-match": "本次响应未命中映射源商品",
+    "non-text": "本次响应没有可处理的文本正文",
+    "config-error": "映射配置异常，本次未改写"
   };
   var status = Object.prototype.hasOwnProperty.call(statuses, report.test.status) ?
     statuses[report.test.status] : "暂无测试执行记录";
-  if (report.test.version === "pro-annual-test-v1" && report.test.status === "no-match") {
-    status = "旧 v1 记录：本次响应未命中 iOS 2TB 前缀";
-  }
+  var revision = escape(config.revision);
+  var presets = engine.presets();
+
   var html = [
     "<!doctype html><html lang=zh-CN><meta charset=utf-8>",
     "<meta name=viewport content=\"width=device-width,initial-scale=1\"><title>Google One SKU 本地报告</title>",
-    "<style>body{font:16px/1.6 -apple-system,BlinkMacSystemFont,sans-serif;max-width:960px;margin:24px auto;padding:0 18px;color:#1c2737;background:#f5f7fa}section{background:white;border:1px solid #dde3ec;border-radius:12px;padding:18px;margin:18px 0}h1{font-size:24px;margin-bottom:10px}h2{font-size:20px}code{overflow-wrap:anywhere}a{color:#1259be}table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:9px;border-bottom:1px solid #ddd;text-align:left;vertical-align:top}.scroll{overflow:auto}.note{color:#46556b}.badge{display:inline-block;background:#e0f4e8;color:#176238;padding:4px 10px;border-radius:8px}.actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:20px 0}.actions form{margin:0}button,.actions a{font:inherit;padding:10px 16px;border:0;border-radius:8px;cursor:pointer;text-decoration:none}.actions a{background:#e4eaf3}.actions button{background:#1259be;color:white}button{background:#e4eaf3;color:#1c2737}</style>",
+    "<style>body{font:16px/1.6 -apple-system,BlinkMacSystemFont,sans-serif;max-width:960px;margin:24px auto;padding:0 18px;color:#1c2737;background:#f5f7fa}section{background:white;border:1px solid #dde3ec;border-radius:12px;padding:18px;margin:18px 0}h1{font-size:24px;margin-bottom:10px}h2{font-size:20px}h3{font-size:17px}code{overflow-wrap:anywhere}a{color:#1259be}table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:8px;border-bottom:1px solid #ddd;text-align:left;vertical-align:top}.scroll{overflow:auto}.note{color:#46556b}.badge{display:inline-block;background:#e0f4e8;color:#176238;padding:4px 10px;border-radius:8px}.msg{padding:10px 14px;border-radius:8px}.msg.ok{background:#e0f4e8;color:#176238}.msg.bad{background:#fdeaea;color:#8d2323}.actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:20px 0}.actions form{margin:0}button,.actions a,.chip{font:inherit;padding:9px 14px;border:0;border-radius:8px;cursor:pointer;text-decoration:none;display:inline-block}.actions a{background:#e4eaf3;color:#1c2737}.actions button{background:#1259be;color:white}button{background:#e4eaf3;color:#1c2737}button.primary{background:#1259be;color:white}input,select{font:inherit;padding:7px;border:1px solid #c7d0dd;border-radius:6px;max-width:100%}input.mono{font-family:ui-monospace,Menlo,monospace;font-size:13px;width:100%}td.center{text-align:center}.chips{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}.chip{background:#eef3fb;color:#1259be;font-size:14px}.chip small{display:block;color:#46556b;font-size:12px;font-weight:400}.inline{display:inline}</style>",
     "<h1>Google One SKU 本地报告</h1>",
     "<p class=badge>本机脚本已接管 · " + VERSION + "</p>",
-    "<nav class=actions aria-label=报告操作><form method=get action=\"" + ROOT + "\"><button type=submit name=format value=json>导出 JSON</button></form><a href=\"" + ROOT + "\">刷新报告</a></nav>",
-    "<p class=note>此页由当前设备的 Shadowrocket 生成；地址栏沿用 one.google.com，采集记录保存在当前设备。</p>",
-    "<p class=note>保持一个 G1 ACQ 模块开启即可：先采集原始响应中的编号，再执行三档改写。</p>",
-    clearMessage ? "<p>" + escape(clearMessage) + "</p>" : "",
-    storageAvailable ? "" : "<p>本地存储接口暂未就绪；此页尚未读取到采集记录。</p>",
+    "<nav class=actions aria-label=报告操作><a href=\"" + ROOT + "\">刷新报告</a><a href=\"" + ROOT + "?format=json\">导出 JSON</a></nav>",
+    "<p class=note>此页由当前设备的 Shadowrocket 生成；地址栏沿用 one.google.com，采集记录与映射规则保存在当前设备。</p>",
+    message ? "<p class=\"msg " + messageTone + "\">" + escape(message) + "</p>" : "",
+    storageAvailable ? "" : "<p>本地存储接口暂未就绪；映射无法保存，采集记录也读不到。</p>",
+
+    "<section><h2>映射配置</h2>",
+    "<p>状态：<strong>" + escape(CONFIG_STATUS[config.status] || config.status) + "</strong><br>" +
+      "模式：" + escape(MODE_LABELS[config.mode] || config.mode || "未启用") + "<br>" +
+      "规则数：" + config.rules.length + " / " + engine.limit + "<br>" +
+      "2TB 候选目标：<code>" + escape(config.target || "未配置") + "</code><br>" +
+      "修订：" + escape(config.revision) + (config.updatedAt ? "（" + escape(config.updatedAt) + "）" : "") + "</p>",
+    config.error ? "<p class=\"msg bad\">" + escape(config.error) + "</p>" : "",
+    "<p class=note>只对 <code>one.google.com/ai?</code> 的响应按完整源 SKU 改写；同一源 SKU 只保存一条规则。前缀规则需以点结尾。留空「原始 SKU」即删除该行。</p>",
+    "<h3>模板</h3><div class=chips>",
+    presets.map(function (preset) {
+      return "<a class=chip href=\"" + ROOT + "?preset=" + encodeURIComponent(preset.id) + "&rev=" + revision + "\">" +
+        escape(preset.title) + "<small>" + escape(preset.description) + "</small></a>";
+    }).join(""),
+    "</div>",
+    "<form method=get action=\"" + ROOT + "\">",
+    "<input type=hidden name=rev value=\"" + revision + "\">",
+    "<div class=scroll><table><thead><tr><th>匹配</th><th>原始 SKU</th><th>目标 SKU</th><th>启用</th></tr></thead><tbody>",
+    ruleRows(),
+    "</tbody></table></div>",
+    "<p><button class=primary type=submit name=save value=1>保存映射</button></p></form>",
+    "<form method=get action=\"" + ROOT + "\"><input type=hidden name=rev value=\"" + revision +
+      "\"><button type=submit name=restore value=1>恢复默认映射</button></form>",
+    "<p class=note>保存前会回读核对；配置被其它页面改动时本次不保存，页面直接载入最新规则。默认 20TB 为 1 个月免费试用目标，30TB 为 1 个月 19 美元目标。</p></section>",
+
     "<section><h2>采集运行记录</h2>",
     "<p>实际采集脚本：<code>" + escape(report.scan.version || "暂无记录") + "</code><br>" + scanVersionStatus + "</p>",
     "<p>已扫描文本响应：" + report.scan.scannedResponses + "；已记录非文本响应：" + report.scan.nonTextResponses +
@@ -222,21 +674,24 @@
     "<p class=note>累计清单按编号去重；收到相同编号会更新次数，清单条数保持不变。先记录计数和时间，重新打开 Google App 方案页，再刷新本报告对照。</p>",
     "<h3>最近 10 次响应</h3>", recentTable(report.scan.recentResponses),
     "<p class=note>计数增加且显示重复编号，表示已收到响应；时间和计数保持原值，表示尚无新的匹配响应记录，可核对页面缓存、模块开关、HTTPS 解密、请求域名与脚本日志中的 saved=no。路径仅保存分类。</p></section>",
-    "<section><h2>最近一次三档映射</h2>",
-    "<p>当前配置的 2TB 候选目标：<code>" + CONFIGURED_TARGET + "</code></p>",
-    "<p class=note>本版按指定 12months_ip_90p 编号测试，完整目标以 _ip_90p 结尾；实际商品、价格与扣款周期查看 App Store 购买面板。</p>",
-    "<p>版本：" + escape(report.test.version || "暂无") + "<br>状态：" + escape(status) + "；总替换次数：" + report.test.hitCount + "；其中 2TB：" + report.test.annualHitCount + "</p>",
-    "<p>2TB 源前缀：<code>g1.ios.2tb.</code><br>该次记录的 2TB 目标：<code>" + escape(report.test.target || "暂无记录") + "</code><br>20TB / 30TB 沿用旧优惠映射与 75p 回退；各档实际目标见下表。<br>执行时间（UTC）：" + escape(report.test.updatedAt || "暂无") + "</p>",
-    "<p class=note>这里记录的是脚本执行结果；商品是否被 App Store 识别、价格和周期需查看购买面板。</p>",
+
+    "<section><h2>最近一次改写</h2>",
+    "<p>版本：" + escape(report.test.version || "暂无") + "<br>状态：" + escape(status) +
+      "；总替换次数：" + report.test.hitCount + "；其中 2TB：" + report.test.annualHitCount +
+      "；备用档：" + report.test.fallbackHitCount + "</p>",
+    "<p>2TB 源前缀：<code>g1.ios.2tb.</code><br>该次记录的 2TB 目标：<code>" + escape(report.test.target || "暂无记录") +
+      "</code><br>执行时间（UTC）：" + escape(report.test.updatedAt || "暂无") + "</p>",
+    "<p class=note>备用档只在主目标未出现在该次响应正文、而 75p 备用目标出现时使用，逐行标记在下方「备用档」列。商品是否被 App Store 识别、价格与周期需查看购买面板。</p>",
     table(report.test.matchedFrom, false), "</section>",
+
     "<section><h2>浏览页面时采集到的候选 SKU</h2>",
     "<p>累计编号：" + report.scan.skus.length + "；同一编号合并计数，每次响应的新增与重复情况见上方采集运行记录。</p>",
     "<p class=note>编号在改写前从原始响应中提取，并非商店的完整商品目录；脚本生成的替换目标不会自动加入这份清单。</p>",
     report.scan.truncated ? "<p>记录已达到 300 个上限；清空后可重新采集目标页面。</p>" : "",
     table(report.scan.skus, true),
     "<p>更新时间（UTC）：" + escape(report.scan.updatedAt || "暂无") + "</p></section>",
-    "<form method=get action=\"" + ROOT + "\"><button name=clear value=1>清空本工具的采集与测试记录</button></form>",
-    "<p class=note>浏览方案后刷新本页查看记录；独立采集器和历史改写副本保持停用，避免重复记录。</p></html>"
+    "<form method=get action=\"" + ROOT + "\"><button type=submit name=clear value=1>清空本工具的采集与测试记录</button></form>",
+    "<p class=note>清空只影响采集与执行记录，不动映射规则；恢复默认映射请用上方的按钮。</p></html>"
   ].join("");
   $done({ response: { status: 200, headers: headers, body: html } });
 })();
