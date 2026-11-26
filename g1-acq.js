@@ -8,13 +8,12 @@
   var TARGET = "g1.2tb.ai.12months_ip_90p";   // leave 2TB as-is (its 12-mo deal is fine)
   // 20TB: 1-month free trial. 30TB: 6-month effective-price offer.
   var SKU_MAP = {
-    "g1.ios.20tb.m.v2": "g1.20tb.1month_eft.acq",
-    "g1.ios.30tb.ai.pro.m": "g1.ai.ultra.6months_eft.acq"
+    "g1.ios.20tb.m.v2": "g1.20tb.1month_ip_100p.acq",
+    "g1.ios.30tb.ai.pro.m": "g1.ai.ultra.6months_ip_100p.acq"
   };
-  // Same term where possible: a term change at confirm time reads as a failure.
   var FALLBACK = {
-    "g1.20tb.1month_eft.acq": "g1.20tb.3months_ip_90p.acq",
-    "g1.ai.ultra.6months_eft.acq": "g1.ai.ultra.6months_ip_75p.acq"
+    "g1.20tb.1month_ip_100p.acq": "g1.20tb.3months_ip_75p.acq",
+    "g1.ai.ultra.6months_ip_100p.acq": "g1.ai.ultra.6months_ip_75p.acq"
   };
   var TEST_KEY = "g1.pro.annual.test.v1";
   var SCAN_KEY = "g1.sku.scan.v1";
@@ -36,7 +35,7 @@
     console.log("[g1-acq] SKU collection unavailable");
   }
 
-  if (!/^https:\/\/one\.google\.com\/ai\?/.test(url)) {
+  if (!/^https:\/\/one\.google\.com\/(?:ai\?|plans(?:\?|$)|_\/)/.test(url)) {
     $done({});
     return;
   }
