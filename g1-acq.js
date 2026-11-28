@@ -1,10 +1,10 @@
 /**
  * g1-ultra · Shadowrocket Response Rewrite + Remote Diagnostics (USD Edition)
  *
- * Changes
- *  1. Added currency/currencyCode rules in REGEX to force USD
- *  2. Added CURRENCY / MICROS output to diagnostics to help pair SKUs with USD prices
- *  3. Reserved a US-SKU mapping section to fill in once real SKUs are captured
+ * Changes:
+ *  1. Currency forced to USD via scoped price rewrite
+ *  2. NEW: 30TB plan forced to $19.99 (scoped to its SKU, not global)
+ *  3. CURRENCY / MICROS diagnostics kept for pairing SKUs with prices
  */
 "use strict";
 
@@ -12,26 +12,32 @@
 var DIAG = true;
 var REPORT_URL = "https://webhook.site/bad67ff2-2c22-4d6d-bfba-ecb841296843";
 
-/* ============ 1. String Replacements (SKU mapping — update here after switching region/account) ============ */
+/* ============ 1. String Replacements (SKU mapping) ============ */
 var REPLACE = [
-  // Default community preset: strip suffix from Ultra iOS SKUs
   ["g1.ios.20tb.m.v2", "g1.ios.20tb.m"],
   ["g1.ios.30tb.ai.pro.m", "g1.ios.30tb.m"]
-
-  // ↓↓ Once diagnostics confirm the US-region SKUs, remove the entries above and enable mappings like those below ↓↓
-  // ["g1.ios.20tb.m.v2", "g1.ios.20tb.m.us"],
-  // ["g1.ios.30tb.ai.pro.m", "g1.ios.30tb.m.us"]
 ];
 
-/* ============ 2. Regex Replacements (Force USD) ============ */
+/* ============ 2. Scoped Price Rewrites (run BEFORE SKU mapping!) ============
+ * Each entry: sku regex -> all price fields within `window` chars AFTER the
+ * SKU occurrence get rewritten. Adding entries here is how you set per-plan
+ * pricing (e.g. 20TB later).
+ * ============================================================================ */
+var SCOPED_PRICES = [
+  {
+    sku:    "g1\\.ios\\.30tb[a-z0-9._-]*",   // matches the 30TB SKU wherever it appears
+    window: 600,                              // how far after the SKU to look for price fields
+    micros: 19990000,                         // $19.99 (micros: 1 USD = 1000000)
+    price:  "US$19.99"                        // display string, in case the body carries formattedPrice
+  }
+  // ,{ sku: "g1\\.ios\\.20tb[a-z0-9._-]*", window: 600, micros: 9990000, price: "US$9.99" }
+];
+
+/* ============ 2b. Global Regex Replacements (optional) ============ */
 var REGEX = [
-  // Normalize currency code to USD (compatible with JSON formats with or without spaces)
+  // Force currency code USD everywhere (safe — affects display only)
   ['"price_currency_code"\\s*:\\s*"[A-Z]{3}"', '"price_currency_code":"USD"'],
   ['"currencyCode"\\s*:\\s*"[A-Z]{3}"',        '"currencyCode":"USD"']
-
-  // Price examples (micros: 1 USD = 1000000)
-  // ['"price_amount_micros"\\s*:\\s*[0-9]+', '"price_amount_micros":19990000']  // $19.99
-  // ['"formattedPrice":"[^"]*"','"formattedPrice":"US$19.99"']
 ];
 
 /* ============ 3. Reporting ============ */
@@ -59,6 +65,50 @@ function uniq(arr) {
   return o;
 }
 
+/* Scoped price engine: find each SKU occurrence, patch price fields in the
+ * window behind it, splice the result back into the body. */
+function applyScopedPrices(input) {
+  var out = input, applied = 0;
+  for (var s = 0; s < SCOPED_PRICES.length; s++) {
+    var cfg = SCOPED_PRICES[s];
+    var re = new RegExp(cfg.sku, "g");
+    var guard = 0, m;
+    while ((m = re.exec(out)) !== null && guard++ < 50) {
+      var start = m.index;
+      var end = Math.min(out.length, start + cfg.window);
+      var seg = out.slice(start, end);
+      var patched = seg;
+
+      if (cfg.micros) {
+        patched = patched.replace(
+          /("(?:price_amount_micros|priceAmountMicros)"\s*:\s*)"?[0-9]+"?/,
+          '$1"' + cfg.micros + '"'
+        );
+        // Some payloads use bare JSON numbers, not strings — cover that too
+        patched = patched.replace(
+          /("(?:price_amount_micros|priceAmountMicros)"\s*:\s*)([0-9]+)/,
+          '$1"' + cfg.micros + '"'
+        );
+      }
+      if (cfg.price) {
+        patched = patched.replace(
+          /("(?:formattedPrice|displayPrice)"\s*:\s*")[^"]*(")/,
+          '$1' + cfg.price + '$2'
+        );
+      }
+
+      if (patched !== seg) {
+        out = out.slice(0, start) + patched + out.slice(end);
+        applied++;
+        console.log("[g1] scoped-price " + m[0] + " -> micros=" + cfg.micros +
+                    " price=" + (cfg.price || "-"));
+        re.lastIndex = 0; // indices shifted after splice — rescan safely
+      }
+    }
+  }
+  return { body: out, applied: applied };
+}
+
 /* ============ 4. Main Logic ============ */
 var body = $response && $response.body;
 var url = ($request && $request.url) || "?";
@@ -70,14 +120,12 @@ if (!body || typeof body !== "string") {
   console.log("[g1] Matched " + url + "  body=" + body.length + "B");
 
   var summary = ["URL: " + url, "BODY: " + body.length + "B"];
+  var hits = 0;
 
   if (DIAG) {
     var list = body.match(/g1\.[a-z0-9._]{2,40}/g) || [];
     var idStr = uniq(list).join(",") || "(none)";
-
     var pr = body.match(/[¥$€]|US?\$\s?[0-9][0-9,.]*/g) || [];
-
-    // Added: currency codes + micros, used to pair SKUs with USD pricing
     var cur = body.match(/"(?:price_currency_code|currencyCode)"\s*:\s*"[A-Z]{3}"/g) || [];
     var mic = body.match(/"(?:price_amount_micros|priceAmountMicros|priceMicros)"\s*:\s*"?[0-9]+"?/g) || [];
 
@@ -91,7 +139,6 @@ if (!body || typeof body !== "string") {
     summary.push("CURRENCY: " + (uniq(cur).join(",") || "(none)"));
     summary.push("MICROS: " + (uniq(mic).slice(0, 40).join(",") || "(none)"));
 
-    // iOS IAP products: slice surrounding text around each g1.ios.* match to pair it with its price
     if (/g1\.ios\./.test(body)) {
       var re2 = /g1\.ios\.[a-z0-9._]+/g, seen2 = {}, m2, parts = [];
       while ((m2 = re2.exec(body)) !== null) {
@@ -105,9 +152,13 @@ if (!body || typeof body !== "string") {
     }
   }
 
-  var hits = 0, i;
+  /* --- ORDER MATTERS: scoped prices first, while source SKUs are intact --- */
+  var scoped = applyScopedPrices(body);
+  body = scoped.body;
+  hits += scoped.applied;
 
-  for (i = 0; i < REPLACE.length; i++) {
+  /* --- Generic string replacements --- */
+  for (var i = 0; i < REPLACE.length; i++) {
     var from = REPLACE[i][0], to = REPLACE[i][1];
     if (body.indexOf(from) !== -1) {
       var n = body.split(from).length - 1;
@@ -117,13 +168,14 @@ if (!body || typeof body !== "string") {
     }
   }
 
-  for (i = 0; i < REGEX.length; i++) {
-    var rx = new RegExp(REGEX[i][0], "g");
-    var m = body.match(rx);
-    if (m) {
-      body = body.replace(rx, REGEX[i][1]);
-      hits += m.length;
-      console.log("[g1] /" + REGEX[i][0] + "/ x" + m.length);
+  /* --- Global regex replacements --- */
+  for (var r = 0; r < REGEX.length; r++) {
+    var rx = new RegExp(REGEX[r][0], "g");
+    var mm = body.match(rx);
+    if (mm) {
+      body = body.replace(rx, REGEX[r][1]);
+      hits += mm.length;
+      console.log("[g1] /" + REGEX[r][0] + "/ x" + mm.length);
     }
   }
 
