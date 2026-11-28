@@ -1,7 +1,7 @@
 /**
  * g1-ultra · Shadowrocket Response Rewrite + Remote Diagnostics (USD Edition)
  *
- * Changes:
+ * Changes
  *  1. Added currency/currencyCode rules in REGEX to force USD
  *  2. Added CURRENCY / MICROS output to diagnostics to help pair SKUs with USD prices
  *  3. Reserved a US-SKU mapping section to fill in once real SKUs are captured
